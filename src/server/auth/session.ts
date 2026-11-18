@@ -25,7 +25,8 @@ export const getCurrentDbUser = cache(async () => {
       id: true,
       name: true,
       email: true,
-      image: true,
+      role: true,
+      avatarColor: true,
       createdAt: true,
     },
   });
@@ -33,9 +34,9 @@ export const getCurrentDbUser = cache(async () => {
 
 /**
  * Asserts authentication in Server Components or Server Actions.
- * Redirects to sign-in page if user is not authenticated.
+ * Redirects to /login if user is not authenticated.
  */
-export async function requireAuth(redirectTo = "/auth/signin") {
+export async function requireAuth(redirectTo = "/login") {
   const user = await getSessionUser();
   if (!user) {
     redirect(redirectTo);

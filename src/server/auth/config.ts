@@ -1,4 +1,3 @@
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import { type DefaultSession, type NextAuthConfig } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
@@ -7,28 +6,32 @@ import { z } from "zod";
 import { db } from "~/server/db";
 
 /**
- * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
- * object and keep type safety.
- *
- * @see https://next-auth.js.org/getting-started/typescript#module-augmentation
+ * Module augmentation for `next-auth` types.
  */
 declare module "next-auth" {
   interface Session extends DefaultSession {
     user: {
       id: string;
+      name: string;
+      email: string;
+      role: "SUPER_ADMIN" | "ADMIN" | "MEMBER";
+      avatarColor: string;
     } & DefaultSession["user"];
+  }
+
+  interface User {
+    id?: string;
+    name?: string | null;
+    email?: string | null;
+    role?: "SUPER_ADMIN" | "ADMIN" | "MEMBER";
+    avatarColor?: string;
   }
 }
 
-/**
- * Options for NextAuth.js used to configure adapters, providers, callbacks, etc.
- *
- * @see https://next-auth.js.org/configuration/options
- */
 export const authConfig = {
   providers: [
     CredentialsProvider({
-      name: "credentials",
+      name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
@@ -46,46 +49,47 @@ export const authConfig = {
         }
 
         const user = await db.user.findUnique({
-          where: { email: parsed.data.email },
+          where: { email: parsed.data.email.toLowerCase() },
         });
 
-        if (!user?.password) {
-          return null;
+        if (!user || !user.password) {
+          throw new Error("Invalid email or password.");
         }
 
-        const isValid = await bcrypt.compare(parsed.data.password, user.password);
-        if (!isValid) {
-          return null;
+        const isPasswordValid = await bcrypt.compare(
+          parsed.data.password,
+          user.password,
+        );
+
+        if (!isPasswordValid) {
+          throw new Error("Invalid email or password.");
         }
 
         return {
           id: user.id,
           name: user.name,
           email: user.email,
-          image: user.image,
+          role: user.role as "SUPER_ADMIN" | "ADMIN" | "MEMBER",
+          avatarColor: user.avatarColor,
         };
       },
     }),
-
-    // More providers in here e.g.
-    // GitHubProvider({
-    //   clientId: process.env.AUTH_GITHUB_ID!,
-    //   clientSecret: process.env.AUTH_GITHUB_SECRET!,
-    // }),
-    // GoogleProvider({
-    //   clientId: process.env.AUTH_GOOGLE_ID!,
-    //   clientSecret: process.env.AUTH_GOOGLE_SECRET!,
-    // }),
   ],
-  adapter: PrismaAdapter(db),
-  session: { strategy: "jwt" },
+  session: {
+    strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+  },
   pages: {
-    signIn: "/auth/signin",
+    signIn: "/login",
   },
   callbacks: {
     jwt: async ({ token, user }) => {
       if (user) {
         token.id = user.id;
+        token.name = user.name;
+        token.email = user.email;
+        token.role = (user as { role?: string }).role ?? "MEMBER";
+        token.avatarColor = (user as { avatarColor?: string }).avatarColor ?? "#FF6B00";
       }
       return token;
     },
@@ -94,6 +98,10 @@ export const authConfig = {
       user: {
         ...session.user,
         id: (token.id as string) ?? session.user.id,
+        name: (token.name as string) ?? (session.user.name ?? "User"),
+        email: (token.email as string) ?? session.user.email,
+        role: ((token.role as "SUPER_ADMIN" | "ADMIN" | "MEMBER") ?? "MEMBER"),
+        avatarColor: (token.avatarColor as string) ?? "#FF6B00",
       },
     }),
   },
