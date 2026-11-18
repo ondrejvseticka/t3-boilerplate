@@ -1,37 +1,59 @@
-import { PrismaClient } from "../generated/prisma";
+import { PrismaClient, ActionType, Role } from "../generated/prisma";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("🌱 Seeding database...");
+  console.log("🌱 Starting Kotelna database initialization...");
 
-  const demoEmail = "developer@example.com";
-  const existing = await prisma.user.findUnique({
-    where: { email: demoEmail },
+  // 1. Initial Boiler Settings singleton ("main")
+  await prisma.boilerSettings.upsert({
+    where: { id: "main" },
+    update: {},
+    create: {
+      id: "main",
+      stokeMinutes: 180, // Default 3 hours
+    },
   });
+  console.log("⚙️ BoilerSettings singleton initialized.");
 
-  if (!existing) {
-    const hashedPassword = await bcrypt.hash("Password123!*", 10);
-    const user = await prisma.user.create({
+  // 2. Initial Boiler State singleton ("main")
+  await prisma.boilerState.upsert({
+    where: { id: "main" },
+    update: {},
+    create: {
+      id: "main",
+      lastActionType: ActionType.OUT,
+      lastUserName: "Nobody",
+      lastFuelAt: null,
+      nextCheckAt: null,
+      note: "Vítejte v Kotelně!",
+    },
+  });
+  console.log("🔥 BoilerState singleton initialized.");
+
+  // 3. Check if any user exists; if not, create initial Super Admin
+  const existingUsers = await prisma.user.count();
+  if (existingUsers === 0) {
+    const defaultPassword = await bcrypt.hash("admin123", 10);
+    const superAdmin = await prisma.user.create({
       data: {
-        name: "Demo Developer",
-        email: demoEmail,
-        password: hashedPassword,
+        name: "Super Admin",
+        email: "admin@kotelna.local",
+        password: defaultPassword,
+        role: Role.SUPER_ADMIN,
+        avatarColor: "#FF6B00",
       },
     });
-
-    console.log(`✅ Created demo user: ${user.email} (Password: Password123!*)`);
-  } else {
-    console.log(`ℹ️ Demo user already exists: ${demoEmail}`);
+    console.log(`👑 Initial Super Admin created: ${superAdmin.email} (password: admin123)`);
   }
 
-  console.log("🌱 Database seeding completed.");
+  console.log("✅ Database seed completed successfully!");
 }
 
 main()
   .catch((e) => {
-    console.error("❌ Seed error:", e);
+    console.error("❌ Error seeding database:", e);
     process.exit(1);
   })
   .finally(async () => {
